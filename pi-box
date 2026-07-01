@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# pi-box — run a containerized pi in the current directory.
+#
+# - Bind-mounts the current directory (read-write) at /workspace.
+# - Bind-mounts ~/.pi/agent (read-write) so sessions, settings, trust,
+#   auth.json, models.json, and the shared bin/ (fd, rg) persist exactly like
+#   host pi. Files written there land on your host owned by your own uid.
+# - Runs as the invoking user (uid:gid) so workspace files stay owned by you.
+# - Sandbox boundary = the current directory + ~/.pi/agent. Nothing else on
+#   the host is reachable. NOTE: network egress is NOT contained.
+#
+# Usage:
+#   pi                 # launch the TUI in the current dir
+#   pi <args...>       # pass args through to pi
+#
+# Rebuild the image after editing the Dockerfile or after a pi upgrade:
+#   pi-box --build
+
+set -euo pipefail
+
+IMAGE_TAG="pi-sandbox:latest"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
+
+# --- resolve workspace to an absolute path -------------------------------
+workspace_dir="$PWD"
+case "$workspace_dir" in
+  /*) ;;
+  *)  workspace_dir="$(cd -- "$workspace_dir" && pwd)" ;;
+esac
+
+pi_home="${HOME}/.pi/agent"
+if [[ ! -d "$pi_home" ]]; then
+  echo "pi-box: expected pi config at ${pi_home} (run host 'pi' once first)." >&2
+  exit 1
+fi
+
+# --- handle our own flags, pass the rest to pi ----------------------------
+force_build=0
+pi_args=()
+while (($#)); do
+  case "$1" in
+    --build) force_build=1 ;;
+    *)       pi_args+=("$1") ;;
+  esac
+  shift
+done
+
+# --- build the image if missing or if --build was given -------------------
+need_build=0
+if [[ $force_build -eq 1 ]]; then
+  need_build=1
+elif ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+  need_build=1
+fi
+
+if [[ $need_build -eq 1 ]]; then
+  echo "pi-box: building image ${IMAGE_TAG}…" >&2
+  docker build -t "$IMAGE_TAG" -f "$DOCKERFILE" "$SCRIPT_DIR" >&2
+fi
+
+# --- run -----------------------------------------------------------------
+cmd=(
+  docker run --rm -it
+  --user "$(id -u):$(id -g)"
+  --init
+  -v "${workspace_dir}":/workspace
+  -v "${pi_home}":/home/node/.pi/agent
+  -w /workspace
+  "${IMAGE_TAG}"
+)
+if ((${#pi_args[@]})); then
+  cmd+=("${pi_args[@]}")
+fi
+
+exec "${cmd[@]}"
