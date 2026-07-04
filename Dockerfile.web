@@ -1,16 +1,23 @@
-# Server image for pi-sandbox-web. (Frontend build step added in Piece 3.)
+# Server + frontend image for pi-sandbox-web.
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
+
+# Build the server.
 COPY web/server/package.json web/server/tsconfig.json ./server/
 COPY web/server/src ./server/src
 RUN cd server && npm install && npm run build
+
+# Build the frontend.
+COPY web/frontend/package.json web/frontend/tsconfig.json web/frontend/vite.config.ts ./frontend/
+COPY web/frontend/index.html web/frontend/styles.css ./frontend/
+COPY web/frontend/src ./frontend/src
+RUN cd frontend && npm install && npm run build
 
 FROM node:24-bookworm-slim
 WORKDIR /app
 COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/dist ./dist
-# public/ is the built frontend, served as static. Missing until Piece 3.
-COPY web/frontend/dist ./public
+COPY --from=build /app/frontend/dist ./public
 ENV WEB_PORT=8090
 EXPOSE 8090
 ENTRYPOINT ["node", "dist/main.js"]

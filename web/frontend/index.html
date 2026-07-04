@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pi-sandbox-web</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div id="app">
+        <main class="layout">
+            <section class="files" id="files-panel">
+                <header class="files-header">
+                    <h2>Files</h2>
+                    <button id="refresh-files" title="Refresh file list">⟳</button>
+                </header>
+                <div class="upload" id="upload-dropzone">
+                    <label class="upload-label">
+                        <input type="file" id="file-input" multiple />
+                        <span>Drop files here or click to upload</span>
+                    </label>
+                </div>
+                <ul class="file-list" id="file-list"></ul>
+            </section>
+
+            <section class="chat">
+                <header class="chat-header">
+                    <h2>Chat</h2>
+                    <button id="clear-chat">Clear chat</button>
+                </header>
+                <div class="transcript" id="transcript"></div>
+                <footer class="composer">
+                    <textarea id="composer-input" rows="2"
+                        placeholder="Message the agent…  (Enter to send, Shift+Enter for newline)"></textarea>
+                    <button id="send">Send</button>
+                </footer>
+            </section>
+        </main>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+</body>
+
+</html>
