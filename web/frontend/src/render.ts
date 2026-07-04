@@ -27,6 +27,7 @@ export class Transcript {
         node.className = "message user";
         node.textContent = text;
         this.el.appendChild(node);
+        this.bumpWorking();
         this.scrollBottom();
     }
 
@@ -38,16 +39,22 @@ export class Transcript {
             this.el.appendChild(this.currentAssistant);
         }
         this.currentAssistant.textContent += delta;
+        this.bumpWorking();
         this.scrollBottom();
     }
 
     /** Finalize the current assistant block so the next one is fresh. */
     finalizeAssistant(): void {
         this.currentAssistant = null;
+        this.bumpWorking();
     }
 
-    /** Begin a tool-call row. */
+    /** Begin a tool-call row. Finalizes any in-progress text block first. */
     addTool(toolCallId: string, toolName: string, args: any): void {
+        // A tool call ends the preceding text block; the next text_delta
+        // (e.g. a later assistant message) must start a fresh bubble.
+        this.currentAssistant = null;
+
         const row = document.createElement("div");
         row.className = "tool-row";
         row.dataset.toolCallId = toolCallId;
@@ -69,6 +76,7 @@ export class Transcript {
 
         this.el.appendChild(row);
         this.pendingTools.set(toolCallId, { row, argsEl, resultEl, toolCallId });
+        this.bumpWorking();
         this.scrollBottom();
     }
 
@@ -113,6 +121,7 @@ export class Transcript {
         } else {
             pre.appendChild(code);
         }
+        this.bumpWorking();
         this.scrollBottom();
     }
 
@@ -135,7 +144,6 @@ export class Transcript {
         if (on && !this.working) {
             const w = document.createElement("div");
             w.className = "working";
-            w.textContent = "Working";
             this.el.appendChild(w);
             this.working = w;
             this.scrollBottom();
@@ -145,12 +153,42 @@ export class Transcript {
         }
     }
 
+    /** Keep the working indicator pinned to the bottom of the transcript. */
+    private bumpWorking(): void {
+        if (this.working) {
+            this.el.appendChild(this.working); // moving an existing node re-appends it
+        }
+    }
+
     /** Clear the entire transcript. */
     clear(): void {
         this.el.innerHTML = "";
         this.currentAssistant = null;
         this.pendingTools.clear();
         this.working = null;
+    }
+
+    /** Drop any in-progress text bubble and pending (unfinished) tool rows.
+     *  Called when the user stops generation: only fully-processed messages
+     *  and completed tool calls remain. */
+    dropInProgress(): void {
+        if (this.currentAssistant) {
+            this.currentAssistant.remove();
+            this.currentAssistant = null;
+        }
+        for (const [, pending] of this.pendingTools) {
+            pending.row.remove();
+        }
+        this.pendingTools.clear();
+    }
+
+    /** Add a "stopped by user" marker after a user-initiated stop. */
+    addStoppedByUser(): void {
+        const node = document.createElement("div");
+        node.className = "message stopped";
+        node.textContent = "⏹ Stopped by user";
+        this.el.appendChild(node);
+        this.scrollBottom();
     }
 
     private scrollBottom(): void {

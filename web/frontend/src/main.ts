@@ -1,20 +1,37 @@
-import { getFiles, uploadFiles, deleteFile, downloadUrl, clearChat, type FileEntry } from "./api.js";
+import {
+    getFiles,
+    uploadFiles,
+    deleteFile,
+    downloadUrl,
+    clearChat,
+    clearAllFiles,
+    stopChat,
+    type FileEntry,
+} from "./api.js";
 import { Transcript } from "./render.js";
 
 // --- element handles ------------------------------------------------------
 const fileListEl = document.getElementById("file-list") as HTMLUListElement;
 const refreshBtn = document.getElementById("refresh-files") as HTMLButtonElement;
+const clearFilesBtn = document.getElementById("clear-files") as HTMLButtonElement;
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 const dropzone = document.getElementById("upload-dropzone") as HTMLDivElement;
 
 const transcriptEl = document.getElementById("transcript") as HTMLDivElement;
 const inputEl = document.getElementById("composer-input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send") as HTMLButtonElement;
+const stopBtn = document.getElementById("stop") as HTMLButtonElement;
 const clearBtn = document.getElementById("clear-chat") as HTMLButtonElement;
 
 const transcript = new Transcript(transcriptEl);
 
 let streaming = false;
+// Set when the user clicks Stop; consumed at agent_end to drop in-progress
+// output and mark the transcript.
+let stopRequested = false;
+// Set after a user-initiated stop; the next user message is annotated to tell
+// the agent its previous response was interrupted.
+let wasInterrupted = false;
 
 // --- file panel -----------------------------------------------------------
 function formatSize(size: number): string {
@@ -78,6 +95,20 @@ async function reloadFiles(): Promise<void> {
 
 refreshBtn.addEventListener("click", reloadFiles);
 
+clearFilesBtn.addEventListener("click", async () => {
+    if (streaming) {
+        alert("Can't clear files while the agent is working.");
+        return;
+    }
+    if (!confirm("Delete ALL files in the workspace? This cannot be undone.")) return;
+    try {
+        const updated = await clearAllFiles();
+        renderFiles(updated);
+    } catch (err) {
+        alert(String(err));
+    }
+});
+
 // Upload: file input + dropzone.
 async function handleUpload(files: FileList | File[]): Promise<void> {
     if (files.length === 0) return;
@@ -118,10 +149,9 @@ function setStreaming(on: boolean): void {
     streaming = on;
     sendBtn.disabled = on;
     inputEl.disabled = on;
+    stopBtn.disabled = !on; // Stop enabled only while streaming
     transcript.setWorking(on);
-    if (on) {
-        // While streaming the agent may change files; reload after it ends.
-    }
+    if (!on) stopRequested = false; // safety reset on turn end
 }
 
 inputEl.addEventListener("keydown", (e) => {
@@ -132,11 +162,34 @@ inputEl.addEventListener("keydown", (e) => {
 });
 sendBtn.addEventListener("click", () => void send());
 
+stopBtn.addEventListener("click", async () => {
+    if (!streaming || stopRequested) return;
+    stopRequested = true;
+    stopBtn.disabled = true;
+    try {
+        await stopChat();
+    } catch (err) {
+        // If the stop request itself failed, undo so we don't get stuck.
+        stopRequested = false;
+        stopBtn.disabled = false;
+        alert(String(err));
+    }
+});
+
 async function send(): Promise<void> {
-    const message = inputEl.value.trim();
-    if (!message || streaming) return;
+    const userText = inputEl.value.trim();
+    if (!userText || streaming) return;
     inputEl.value = "";
-    transcript.addUser(message);
+    transcript.addUser(userText);
+
+    // If the previous turn was interrupted, annotate the message sent to the
+    // agent so it knows. The user's bubble above shows only their text.
+    let message = userText;
+    if (wasInterrupted) {
+        wasInterrupted = false;
+        message = `${userText}\n\n[The previous response was interrupted by the user.]`;
+    }
+
     setStreaming(true);
 
     try {
@@ -172,6 +225,11 @@ async function consumeSSE(body: ReadableStream<Uint8Array>): Promise<void> {
         let evt: any;
         try { evt = JSON.parse(data); } catch { return; }
         switch (evt.kind) {
+            case "text_start":
+                // A new text block is beginning; finalize any in-progress one
+                // so multi-message turns render as separate bubbles.
+                transcript.finalizeAssistant();
+                break;
             case "text_delta":
                 transcript.appendAssistantText(evt.delta);
                 break;
@@ -185,7 +243,16 @@ async function consumeSSE(body: ReadableStream<Uint8Array>): Promise<void> {
                 void reloadFiles();
                 break;
             case "agent_end":
-                transcript.finalizeAssistant();
+                if (stopRequested) {
+                    // User-initiated stop: drop any in-progress text bubble
+                    // and unfinished tool calls, leaving only completed work.
+                    stopRequested = false;
+                    transcript.dropInProgress();
+                    transcript.addStoppedByUser();
+                    wasInterrupted = true;
+                } else {
+                    transcript.finalizeAssistant();
+                }
                 return;
             case "error":
                 transcript.addUser(`(agent error: ${evt.error})`);

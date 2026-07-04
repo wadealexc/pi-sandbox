@@ -18,6 +18,9 @@ function mapEvent(event: any): Record<string, any> | null {
             if (d && d.type === "text_delta" && typeof d.delta === "string") {
                 return { kind: "text_delta", delta: d.delta };
             }
+            if (d && d.type === "text_start") {
+                return { kind: "text_start" };
+            }
             return null;
         }
         case "tool_execution_start":
@@ -114,6 +117,22 @@ export function makeChatRouter(rpc: RpcClient): Router {
         }
         try {
             await rpc.send({ type: "new_session" });
+            res.json({ ok: true });
+        } catch (err) {
+            res.status(500).json({ error: String(err) });
+        }
+    });
+
+    /** POST /chat/stop — abort the current agent run (no-op if not streaming). */
+    router.post("/chat/stop", async (_req: Request, res: Response) => {
+        if (!isStreaming()) {
+            res.status(409).json({ error: "Not currently streaming." });
+            return;
+        }
+        try {
+            // abort returns a response once the abort is acknowledged; the
+            // trailing agent_end still flows to the active SSE handler.
+            await rpc.send({ type: "abort" });
             res.json({ ok: true });
         } catch (err) {
             res.status(500).json({ error: String(err) });

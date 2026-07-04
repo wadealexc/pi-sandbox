@@ -57,10 +57,22 @@ export async function writeFile(name: string, data: Buffer): Promise<void> {
     await fs.writeFile(full, data);
 }
 
-/** Remove a file or empty directory from the workspace. */
+/** Remove a file or directory (recursively) from the workspace. */
 export async function removeFile(name: string): Promise<void> {
     const full = resolveWorkspace(name);
-    await fs.rm(full, { recursive: false, force: false });
+    // recursive: true so non-empty directories (e.g. node_modules) can be
+    // deleted; force: false so a missing file still throws ENOENT (caller
+    // returns 404). resolveWorkspace already prevents path escapes.
+    await fs.rm(full, { recursive: true, force: false });
+}
+
+/** Remove every top-level entry in the workspace. Tolerant of races. */
+export async function clearAll(): Promise<void> {
+    const entries = await fs.readdir(WORKSPACE, { withFileTypes: true });
+    for (const entry of entries) {
+        const full = path.join(WORKSPACE, entry.name);
+        await fs.rm(full, { recursive: true, force: true });
+    }
 }
 
 export { WORKSPACE };

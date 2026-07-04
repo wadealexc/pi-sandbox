@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import * as path from "node:path";
-import { listFiles, resolveWorkspace, removeFile, writeFile } from "../workspace.js";
+import { listFiles, resolveWorkspace, removeFile, writeFile, clearAll } from "../workspace.js";
 
 const router = Router();
 
@@ -52,7 +52,18 @@ router.post("/files", upload.array("files"), async (req, res) => {
     }
 });
 
-/** DELETE /files/:name — remove a single file or empty dir. */
+/** DELETE /files — clear every top-level entry in the workspace. */
+router.delete("/files", async (_req, res) => {
+    try {
+        await clearAll();
+        const updated = await listFiles();
+        res.json({ files: updated });
+    } catch (err) {
+        res.status(500).json({ error: String(err) });
+    }
+});
+
+/** DELETE /files/:name — remove a single file or directory (recursive). */
 router.delete("/files/:name", async (req, res) => {
     try {
         await removeFile(req.params.name);

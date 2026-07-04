@@ -36,9 +36,16 @@ export async function uploadFiles(files: FileList | File[]): Promise<FileEntry[]
     return body.files as FileEntry[];
 }
 
-/** DELETE /files/:name — remove a single file or empty dir. Returns updated list. */
+/** DELETE /files/:name — remove a single file or directory. Returns updated list. */
 export async function deleteFile(name: string): Promise<FileEntry[]> {
     const res = await fetch(`${BASE}/files/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const body = await jsonOrThrow(res);
+    return body.files as FileEntry[];
+}
+
+/** DELETE /files — remove every top-level entry. Returns updated (empty) list. */
+export async function clearAllFiles(): Promise<FileEntry[]> {
+    const res = await fetch(`${BASE}/files`, { method: "DELETE" });
     const body = await jsonOrThrow(res);
     return body.files as FileEntry[];
 }
@@ -51,5 +58,11 @@ export function downloadUrl(name: string): string {
 /** POST /chat/clear — start a fresh session. */
 export async function clearChat(): Promise<void> {
     const res = await fetch(`${BASE}/chat/clear`, { method: "POST" });
+    await jsonOrThrow(res);
+}
+
+/** POST /chat/stop — abort the current agent run. */
+export async function stopChat(): Promise<void> {
+    const res = await fetch(`${BASE}/chat/stop`, { method: "POST" });
     await jsonOrThrow(res);
 }

@@ -73,6 +73,18 @@ h2 {
     background: var(--border);
 }
 
+.files-actions { display: flex; gap: 4px; }
+
+#clear-files { color: var(--text-dim); }
+#clear-files:hover { color: #ff8888; }
+
+.stop-btn { color: #ff8888; }
+.stop-btn:not(:disabled) {
+    border-color: #ff8888;
+    background: #3a2a2a;
+}
+.stop-btn:not(:disabled):hover { background: #4a2a2a; }
+
 .upload {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
@@ -202,6 +214,17 @@ h2 {
     align-self: flex-start;
 }
 
+.message.stopped {
+    align-self: center;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-style: italic;
+    padding: 4px 10px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+}
+
 .tool-row {
     background: var(--tool);
     border-radius: 6px;
@@ -254,29 +277,32 @@ h2 {
 
 .working {
     align-self: flex-start;
-    color: var(--text-dim);
-    font-style: italic;
-    font-size: 12px;
-    padding: 4px 0;
+    color: var(--accent);
+    font-size: 13px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.working::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .working::after {
-    content: "";
-    animation: dots 1s steps(3) infinite;
-}
-
-@keyframes dots {
-    0% {
-        content: ".";
-    }
-
-    33% {
-        content: "..";
-    }
-
-    66% {
-        content: "...";
-    }
+    content: "thinking…";
 }
 
 /* --- composer ----------------------------------------------------------- */

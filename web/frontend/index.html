@@ -14,7 +14,10 @@
             <section class="files" id="files-panel">
                 <header class="files-header">
                     <h2>Files</h2>
-                    <button id="refresh-files" title="Refresh file list">⟳</button>
+                    <div class="files-actions">
+                        <button id="clear-files" title="Delete all files">Clear all</button>
+                        <button id="refresh-files" title="Refresh file list">⟳</button>
+                    </div>
                 </header>
                 <div class="upload" id="upload-dropzone">
                     <label class="upload-label">
@@ -35,6 +38,7 @@
                     <textarea id="composer-input" rows="2"
                         placeholder="Message the agent…  (Enter to send, Shift+Enter for newline)"></textarea>
                     <button id="send">Send</button>
+                    <button id="stop" class="stop-btn" disabled>Stop</button>
                 </footer>
             </section>
         </main>
