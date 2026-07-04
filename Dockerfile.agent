@@ -1,0 +1,30 @@
+FROM node:24-bookworm-slim
+
+# System deps pi relies on (ripgrep, git, bash, TLS). Mirrors the spi
+# Dockerfile so the agent image is self-contained — it does NOT depend on a
+# prior `spi --build`.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        git \
+        ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
+# pi. --ignore-scripts avoids running postinstall hooks from deps (minor
+# supply-chain hardening, no functional impact).
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+# The bridge (compiled in the image).
+WORKDIR /agent-bridge
+COPY agent-bridge/package.json agent-bridge/tsconfig.json ./
+COPY agent-bridge/src ./src
+RUN npm install && npm run build
+
+# A real HOME so ~/.pi/agent resolves to the bind-mounted agent dir.
+ENV TERM=xterm-256color
+ENV HOME=/home/node
+ENV GIT_CONFIG_GLOBAL=/home/node/.gitconfig
+
+WORKDIR /workspace
+ENTRYPOINT ["node", "/agent-bridge/dist/bridge.js"]

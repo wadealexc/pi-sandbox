@@ -4,12 +4,12 @@ FROM node:24-bookworm-slim
 # fd comes from the read-write ~/.pi/agent/bin mount (host already has a
 # working linux-x64 fd there), so we don't install it here.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-       bash \
-       ca-certificates \
-       git \
-       ripgrep \
-  && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        git \
+        ripgrep \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install pi. --ignore-scripts avoids running postinstall hooks from deps
 # (minor supply-chain hardening, no functional impact).
