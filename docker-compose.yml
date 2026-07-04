@@ -1,0 +1,55 @@
+# pi-sandbox-web — containerized web front-end for the sandboxed pi agent.
+#
+# Two sibling containers, no docker socket, server code baked into its image.
+# The workspace is a relative bind-mount (./workspace) so it persists on the
+# host at a stable, inspectable location. The agent reads your pi config
+# (models.json, settings.json) from the host ~/.pi/agent via $HOME
+# interpolation, exactly like pi-box does.
+#
+#   docker compose build && docker compose up -d
+#   open http://<this-host-LAN-IP>:8090
+#
+# Stop:  docker compose down
+# Logs:  docker compose logs -f web agent
+#
+# NOTE: no auth. Only expose this on a trusted network (see README).
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: pi-sandbox-agent:latest
+    # The agent's read/bash/edit/write tools operate here.
+    volumes:
+      - ./workspace:/workspace
+      # pi config: models.json, settings.json, and (no-op for the local
+      # model) auth.json. Read by the agent; not written (pi runs with
+      # --no-session, and the local model uses apiKey: "none").
+      - ${HOME}/.pi/agent:/home/node/.pi/agent
+    networks:
+      - internal
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: pi-sandbox-web:latest
+    ports:
+      - "8090:8090"
+    environment:
+      - WEB_PORT=8090
+      - AGENT_ADDR=agent:8080
+    # Direct fs access for upload/download/list/delete over the same
+    # workspace the agent operates on.
+    volumes:
+      - ./workspace:/workspace
+    depends_on:
+      - agent
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:

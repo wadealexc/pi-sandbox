@@ -3,3 +3,6 @@
 
 # Build outputs
 */**/dist/
+
+# Web workspace (persisted files for the agent). Created by docker compose.
+/workspace/
