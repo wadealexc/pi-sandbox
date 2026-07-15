@@ -14,14 +14,17 @@ reachable on the host.
 
 ## Files
 
-- `Dockerfile` — image definition (`node:24-bookworm-slim` + pi). Used by the
-  `spi` alias.
+- `Dockerfile` — image definition (`node:24-bookworm-slim` + pi + python3).
+  Used by the `spi` alias.
 - `pi-box` — the wrapper script invoked by the `spi` alias.
 - `Dockerfile.agent` / `Dockerfile.web` / `docker-compose.yml` — the web-mode
   images and wiring.
 - `agent-bridge/` — a tiny TCP↔stdio bridge baked into the agent image; lets
   the web server drive `pi --mode rpc` over the compose-internal network.
 - `web/` — the web server and frontend (TypeScript).
+- `overrides/` — AGENTS.md override sources (see
+  [AGENTS.md override](#agentsmd-override)): `AGENTS_MD_OVERRIDE.md` (TUI
+  default) and `AGENTS_MD_WEB.md` (web mode).
 
 ## Install
 
@@ -56,9 +59,17 @@ launches a container from the cached image.
 spi                       # launch the pi TUI in the current directory
 spi <args...>             # pass args through to pi
 spi --model openrouter/z-ai/glm-5.2
+spi --empty-agents        # shadow AGENTS.md with nothing (no context files)
+spi --no-override         # don't inject an override (agent sees the target
+                           # dir's real AGENTS.md, or none)
 ```
 
-Args other than `--build` are forwarded to `pi` inside the container.
+Args other than `--build`, `--empty-agents`, and `--no-override` are
+forwarded to `pi` inside the container.
+
+The current directory is mounted at `/workspace/<basename>` (so running
+`spi` from `~/projects/foo` shows the agent `/workspace/foo`); it falls back
+to `/workspace` when the basename is unusable (e.g. launched from `/`).
 
 ## Sandbox boundary
 
@@ -73,6 +84,29 @@ Not reachable: anything else on the host (`~`, `~/.ssh`, other projects,
 Not contained: network egress. The container has outbound network access by
 default (needed to reach model APIs). A malicious script in the workspace
 could exfiltrate files or probe your LAN. Filesystem isolation only.
+
+## AGENTS.md override
+
+pi auto-loads `AGENTS.md` from the workspace root as project context. Both
+modes inject an override without touching the host: the override source is
+mounted **read-only at a neutral path outside the workspace bind mount**
+(`/pi-agents-override.md`) and fed to pi via `--append-system-prompt`. It is
+paired with `--no-context-files` so pi doesn't also discover a real
+`AGENTS.md` in the target directory — a true shadow.
+
+**TUI (`spi`):**
+
+- Default — mounts `overrides/AGENTS_MD_OVERRIDE.md` and feeds it to pi.
+- `--empty-agents` — no override is fed; `--no-context-files` alone shadows
+  any real `AGENTS.md`, so the agent sees no context-file instructions at
+  all.
+- `--no-override` — no flags, no mount; the agent sees the target dir's real
+  `AGENTS.md` (or none).
+
+**Web mode** — mounts `overrides/AGENTS_MD_WEB.md` into the agent container
+(neutral path) and feeds it to pi the same way. It does **not** appear in the
+Files panel. Edit the source file and rebuild (`docker compose build &&
+docker compose up -d`) to change what the agent sees.
 
 ---
 

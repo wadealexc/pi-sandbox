@@ -9,6 +9,7 @@ RUN apt-get update \
         ca-certificates \
         git \
         ripgrep \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pi. --ignore-scripts avoids running postinstall hooks from deps

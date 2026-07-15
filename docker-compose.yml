@@ -27,6 +27,13 @@ services:
       # model) auth.json. Read by the agent; not written (pi runs with
       # --no-session, and the local model uses apiKey: "none").
       - ${HOME}/.pi/agent:/home/node/.pi/agent
+      # AGENTS.md override (read-only), mounted at a neutral path OUTSIDE the
+      # workspace so nothing is written to the host. The bridge feeds it to pi
+      # via --append-system-prompt (with --no-context-files for a true
+      # shadow). It does NOT appear in the web Files panel.
+      - ./overrides/AGENTS_MD_WEB.md:/pi-agents-override.md:ro
+    environment:
+      - AGENTS_OVERRIDE_PATH=/pi-agents-override.md
     networks:
       - internal
     restart: unless-stopped

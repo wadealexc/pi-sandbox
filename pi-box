@@ -2,17 +2,28 @@
 #
 # pi-box — run a containerized pi in the current directory.
 #
-# - Bind-mounts the current directory (read-write) at /workspace.
+# - Bind-mounts the current directory (read-write) at /workspace/<basename>,
+#   so the agent sees the same folder name you launched from (e.g. running
+#   from ~/projects/foo mounts at /workspace/foo). Falls back to /workspace
+#   when the basename is unusable (e.g. launched from /).
 # - Bind-mounts ~/.pi/agent (read-write) so sessions, settings, trust,
 #   auth.json, models.json, and the shared bin/ (fd, rg) persist exactly like
 #   host pi. Files written there land on your host owned by your own uid.
+# - Injects an AGENTS.md override via pi's --append-system-prompt flag (with
+#   --no-context-files so a real AGENTS.md in the target dir is shadowed).
+#   The override file is mounted read-only at a neutral path OUTSIDE the
+#   project bind mount, so nothing is written to the host directory. See the
+#   flags below.
 # - Runs as the invoking user (uid:gid) so workspace files stay owned by you.
 # - Sandbox boundary = the current directory + ~/.pi/agent. Nothing else on
 #   the host is reachable. NOTE: network egress is NOT contained.
 #
 # Usage:
-#   pi                 # launch the TUI in the current dir
-#   pi <args...>       # pass args through to pi
+#   pi                       # launch the TUI in the current dir
+#   pi <args...>             # pass args through to pi
+#   pi --empty-agents        # shadow AGENTS.md with nothing (no context files)
+#   pi --no-override         # don't inject an override (agent sees the
+#                            # target dir's real AGENTS.md, or none)
 #
 # Rebuild the image after editing the Dockerfile or after a pi upgrade:
 #   pi-box --build
@@ -38,11 +49,17 @@ fi
 
 # --- handle our own flags, pass the rest to pi ----------------------------
 force_build=0
+# override: mount overrides/AGENTS_MD_OVERRIDE.md as AGENTS.md (default)
+# empty:    mount overrides/AGENTS_MD_EMPTY.md as AGENTS.md (shadows real)
+# none:     no AGENTS.md mount; agent sees the target dir's real AGENTS.md
+agents_mode="override"
 pi_args=()
 while (($#)); do
     case "$1" in
-        --build) force_build=1 ;;
-        *)       pi_args+=("$1") ;;
+        --build)         force_build=1 ;;
+        --empty-agents)  agents_mode="empty" ;;
+        --no-override)   agents_mode="none" ;;
+        *)               pi_args+=("$1") ;;
     esac
     shift
 done
@@ -60,16 +77,59 @@ if [[ $need_build -eq 1 ]]; then
     docker build -t "$IMAGE_TAG" -f "$DOCKERFILE" "$SCRIPT_DIR" >&2
 fi
 
+# --- mount target: mimic the source folder name --------------------------
+# Mount the project at /workspace/<basename> so the agent sees the same
+# folder name you launched from. Fall back to /workspace when the basename is
+# empty or otherwise unusable (e.g. launched from /).
+base="$(basename "$workspace_dir")"
+if [[ -z "$base" || "$base" == "/" || "$base" == "." ]]; then
+    mount_root="/workspace"
+else
+    mount_root="/workspace/$base"
+fi
+
+# The AGENTS.md override is mounted at a NEUTRAL path outside the project
+# bind mount (/pi-agents-override.md), then fed to pi via
+# --append-system-prompt. Mounting a file *inside* the host bind would make
+# the Docker daemon create a root-owned stub on the host project dir (the
+# mountpoint has to exist); keeping it outside avoids any host write. We pair
+# it with --no-context-files so pi doesn't also discover a real AGENTS.md in
+# the target directory (true shadow). See the flags below.
+agents_src_path="/pi-agents-override.md"
+
 # --- run -----------------------------------------------------------------
 cmd=(
     docker run --rm -it
     --user "$(id -u):$(id -g)"
     --init
-    -v "${workspace_dir}":/workspace
+    -v "${workspace_dir}":"${mount_root}"
     -v "${pi_home}":/home/node/.pi/agent
-    -w /workspace
-    "${IMAGE_TAG}"
+    -w "${mount_root}"
 )
+
+# pi flags for the AGENTS.md override. These are prepended to the user's
+# pi_args so user-supplied args still win on conflicts.
+pi_flags=()
+if [[ "$agents_mode" == "override" ]]; then
+    agents_src="${SCRIPT_DIR}/overrides/AGENTS_MD_OVERRIDE.md"
+    if [[ -f "$agents_src" ]]; then
+        cmd+=(-v "${agents_src}":"${agents_src_path}":ro)
+        pi_flags+=(--no-context-files --append-system-prompt "${agents_src_path}")
+    else
+        echo "pi-box: AGENTS override source not found: ${agents_src} (skipping override)" >&2
+    fi
+elif [[ "$agents_mode" == "empty" ]]; then
+    # Shadow with nothing: disable context-file discovery, add no override.
+    # The agent sees no AGENTS.md at all (even if the target dir has one).
+    pi_flags+=(--no-context-files)
+fi
+# agents_mode == "none": no flags, no mount — the agent sees the target
+# dir's real AGENTS.md (or none).
+
+cmd+=("${IMAGE_TAG}")
+if ((${#pi_flags[@]})); then
+    cmd+=("${pi_flags[@]}")
+fi
 if ((${#pi_args[@]})); then
     cmd+=("${pi_args[@]}")
 fi

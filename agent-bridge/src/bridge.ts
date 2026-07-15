@@ -1,4 +1,5 @@
 import * as net from "node:net";
+import * as fs from "node:fs";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 // --- configuration --------------------------------------------------------
@@ -7,6 +8,12 @@ const HOST = process.env.HOST ?? "0.0.0.0";
 // Where pi runs. cwd is the workspace; HOME already points at /home/node in
 // the image so ~/.pi/agent resolves to the bind-mounted agent dir.
 const WORKDIR = process.env.WORKDIR ?? "/workspace";
+// Optional AGENTS.md override, mounted read-only at a neutral path (outside
+// the workspace bind mount) by docker-compose.yml. When present, pi loads it
+// via --append-system-prompt and AGENTS.md/CLAUDE.md discovery is disabled
+// (--no-context-files) so it truly shadows any real AGENTS.md in the
+// workspace. When absent, only --no-context-files is passed.
+const AGENTS_OVERRIDE = process.env.AGENTS_OVERRIDE_PATH ?? "/pi-agents-override.md";
 
 // --- per-connection state -------------------------------------------------
 interface ActiveConn {
@@ -16,7 +23,15 @@ interface ActiveConn {
 let active: ActiveConn | null = null;
 
 function spawnAgent(cwd: string): ChildProcessWithoutNullStreams {
-    return spawn("pi", ["--mode", "rpc", "--no-session"], {
+    // --no-context-files shadows any AGENTS.md/CLAUDE.md in the workspace;
+    // --append-system-prompt feeds the override file (if mounted). The flag
+    // reads a file path when one exists, so only add it when the override is
+    // actually mounted (otherwise pi would append the literal path string).
+    const args = ["--mode", "rpc", "--no-session", "--no-context-files"];
+    if (fs.existsSync(AGENTS_OVERRIDE)) {
+        args.push("--append-system-prompt", AGENTS_OVERRIDE);
+    }
+    return spawn("pi", args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
     });
