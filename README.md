@@ -78,6 +78,10 @@ settings, trust, `auth.json`, `models.json`, and the shared `bin/` persist
 exactly like host pi). Files written into your project stay owned by your
 own uid (the image's `node` user is uid 1000:1000).
 
+Read-only: the host's global git config (`~/.gitconfig` or
+`~/.config/git/config`) and the global excludes file it references
+(`core.excludesFile`, falling back to the XDG default `~/.config/git/ignore`).
+
 Not reachable: anything else on the host (`~`, `~/.ssh`, other projects,
 `/etc`, ...).
 

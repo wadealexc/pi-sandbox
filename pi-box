@@ -9,6 +9,9 @@
 # - Bind-mounts ~/.pi/agent (read-write) so sessions, settings, trust,
 #   auth.json, models.json, and the shared bin/ (fd, rg) persist exactly like
 #   host pi. Files written there land on your host owned by your own uid.
+# - Bind-mounts the host's global git config (read-only) so global ignores
+#   (core.excludesFile) replicate: a host-side globally-gitignored scratch
+#   dir stays ignored in the sandbox instead of showing up as untracked.
 # - Injects an AGENTS.md override via pi's --append-system-prompt flag (with
 #   --no-context-files so a real AGENTS.md in the target dir is shadowed).
 #   The override file is mounted read-only at a neutral path OUTSIDE the
@@ -45,6 +48,27 @@ pi_home="${HOME}/.pi/agent"
 if [[ ! -d "$pi_home" ]]; then
     echo "pi-box: expected pi config at ${pi_home} (run host 'pi' once first)." >&2
     exit 1
+fi
+
+# --- replicate host global git config (read-only) ------------------------
+# Mount the host's effective global gitconfig read-only at that path, 
+# plus the excludes file it references at a neutral path. Point
+# core.excludesFile at the neutral path via GIT_CONFIG_* env vars (highest
+# precedence, layered on top of the file config — no host writes). Falls back
+# to the XDG default (~/.config/git/ignore) when core.excludesFile is unset.
+
+gitconfig_src=""
+for cand in "${HOME}/.gitconfig" "${HOME}/.config/git/config"; do
+    [[ -f "$cand" ]] && { gitconfig_src="$cand"; break; }
+done
+
+excludes_src=""
+excludes_ef="$(git config --global core.excludesFile 2>/dev/null || true)"
+excludes_ef="${excludes_ef/#\~/$HOME}"
+if [[ -n "$excludes_ef" && -f "$excludes_ef" ]]; then
+    excludes_src="$excludes_ef"
+elif [[ -f "${HOME}/.config/git/ignore" ]]; then
+    excludes_src="${HOME}/.config/git/ignore"
 fi
 
 # --- handle our own flags, pass the rest to pi ----------------------------
@@ -106,6 +130,17 @@ cmd=(
     -v "${pi_home}":/home/node/.pi/agent
     -w "${mount_root}"
 )
+
+# Host global git config (read-only): see the detection block above.
+if [[ -n "$gitconfig_src" ]]; then
+    cmd+=(-v "${gitconfig_src}":/home/node/.gitconfig:ro)
+fi
+if [[ -n "$excludes_src" ]]; then
+    cmd+=(-v "${excludes_src}":/pi-global-excludes:ro)
+    cmd+=(-e GIT_CONFIG_COUNT=1)
+    cmd+=(-e GIT_CONFIG_KEY_0=core.excludesFile)
+    cmd+=(-e GIT_CONFIG_VALUE_0=/pi-global-excludes)
+fi
 
 # pi flags for the AGENTS.md override. These are prepended to the user's
 # pi_args so user-supplied args still win on conflicts.
